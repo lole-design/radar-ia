@@ -1,0 +1,50 @@
+{
+  "sitio": {
+    "nombre": "Radar IA",
+    "lema": "Lo que importa en inteligencia artificial para quienes construyen",
+    "descripcion": "Los proyectos de IA que más crecen en GitHub y las noticias clave, resumidos en español para desarrolladores que crean agentes, automatizaciones y SaaS.",
+    "frecuencia": "Se actualiza lunes, miércoles y viernes",
+    "url": ""
+  },
+  "github": {
+    "temas": ["llm", "ai-agents", "agentic-ai", "generative-ai", "mcp", "rag", "ai", "machine-learning"],
+    "dias_repos_nuevos": 45,
+    "min_estrellas_nuevos": 40,
+    "min_estrellas_establecidos": 1000,
+    "min_estrellas_por_dia": 5,
+    "cantidad": 10,
+    "no_repetir_ediciones": 3
+  },
+  "noticias": {
+    "dias": 3,
+    "min_puntos_hn": 60,
+    "puntuacion_fuente_oficial": 180,
+    "cantidad": 10,
+    "no_repetir_ediciones": 3,
+    "feeds": [
+      {"nombre": "OpenAI", "url": "https://openai.com/news/rss.xml", "filtrar": false},
+      {"nombre": "Google", "url": "https://blog.google/technology/ai/rss/", "filtrar": false},
+      {"nombre": "Google DeepMind", "url": "https://deepmind.google/blog/rss.xml", "filtrar": false},
+      {"nombre": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml", "filtrar": false},
+      {"nombre": "GitHub Blog", "url": "https://github.blog/ai-and-ml/feed/", "filtrar": false}
+    ]
+  },
+  "ia": {
+    "activada": true,
+    "modelo": "openai/gpt-4.1-mini",
+    "pausa_segundos": 4.5
+  },
+  "categorias": [
+    "Agentes",
+    "Modelos",
+    "Herramientas para devs",
+    "Automatización",
+    "RAG y datos",
+    "Imagen, audio y vídeo",
+    "Infraestructura",
+    "Investigación",
+    "Negocio e industria",
+    "Seguridad"
+  ],
+  "lista_negra": ["crypto", "bitcoin", "airdrop", "memecoin", "solana", "casino", "betting", "nsfw", "porn", "hentai", "cheat", "aimbot"]
+}
