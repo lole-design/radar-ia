@@ -24,10 +24,11 @@ EDITIONS = DATA / "ediciones"
 HISTORY_FILE = DATA / "historial_estrellas.json"
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 NOW = datetime.now(timezone.utc)
 TODAY = NOW.date().isoformat()
 UA = "radar-ia-bot/1.0"
-MODELS_URL = "https://models.github.ai/inference/chat/completions"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 AI_WORDS = re.compile(
     r"\b(ai|a\.i\.|llms?|gpt[\w.-]*|chatgpt|claude|gemini|llama|openai|anthropic|deepmind|"
@@ -100,9 +101,35 @@ def previous_editions(n):
     return [load_json(p, {}) for p in files[-n:]] if n else []
 
 
-# ---------------------------------------------------------------- IA (GitHub Models)
+# ---------------------------------------------------------------- IA (Google Gemini, plan gratuito)
 
-_ai_state = {"enabled": bool(TOKEN) and CONFIG["ia"]["activada"], "calls": 0}
+_ai_state = {"enabled": bool(GEMINI_KEY) and CONFIG["ia"]["activada"], "calls": 0, "model": None}
+
+
+def warn(msg):
+    """Aviso visible en el resumen de la ejecución de GitHub Actions."""
+    log(f"::warning::{msg}" if os.environ.get("GITHUB_ACTIONS") else f"AVISO: {msg}")
+
+
+def pick_model():
+    """Usa el modelo de config.json o, si es "auto", el Flash-Lite más reciente disponible."""
+    wanted = CONFIG["ia"]["modelo"]
+    if wanted and wanted != "auto":
+        return wanted
+    raw = http(f"{GEMINI_BASE}/models?pageSize=200", headers={"x-goog-api-key": GEMINI_KEY}, retries=1)
+    names = [m["name"].removeprefix("models/") for m in json.loads(raw).get("models", [])
+             if "generateContent" in m.get("supportedGenerationMethods", [])]
+
+    def version(name):
+        m = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+        return float(m.group(1)) if m else 0
+
+    for family in ("flash-lite", "flash"):
+        stable = [n for n in names if f"-{family}" in n and n.endswith(family)]
+        candidates = stable or [n for n in names if f"-{family}" in n and "image" not in n and "tts" not in n]
+        if candidates:
+            return max(candidates, key=version)
+    raise RuntimeError("no hay modelos Gemini Flash disponibles para esta clave")
 
 SYSTEM_PROMPT = (
     "Eres editor de un diario de inteligencia artificial para desarrolladores hispanohablantes "
@@ -115,29 +142,39 @@ SYSTEM_PROMPT = (
 def ai_json(prompt, max_tokens=450):
     if not _ai_state["enabled"]:
         return None
+    if not _ai_state["model"]:
+        try:
+            _ai_state["model"] = pick_model()
+            log(f"    Modelo de IA: {_ai_state['model']}")
+        except Exception as e:  # noqa: BLE001
+            warn(f"IA desactivada: no se pudo elegir modelo de Gemini ({e}). Revisa el secreto GEMINI_API_KEY.")
+            _ai_state["enabled"] = False
+            return None
     if _ai_state["calls"]:
         time.sleep(CONFIG["ia"]["pausa_segundos"])
     _ai_state["calls"] += 1
     payload = {
-        "model": CONFIG["ia"]["modelo"],
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.3,
-        "max_tokens": max_tokens,
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": max_tokens * 4,  # margen para modelos que "piensan" antes de responder
+            "responseMimeType": "application/json",
+        },
     }
-    headers = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
+    url = f"{GEMINI_BASE}/models/{_ai_state['model']}:generateContent"
     try:
-        raw = http(MODELS_URL, data=payload, headers=headers, timeout=90, retries=1)
-        content = json.loads(raw)["choices"][0]["message"]["content"]
+        raw = http(url, data=payload, headers={"x-goog-api-key": GEMINI_KEY}, timeout=90, retries=2)
+        data = json.loads(raw)
+        parts = data["candidates"][0]["content"]["parts"]
+        content = "".join(p.get("text", "") for p in parts if not p.get("thought"))
         match = re.search(r"\{.*\}", content, re.S)
         return json.loads(match.group(0)) if match else None
     except urllib.error.HTTPError as e:
         detail = e.read()[:300].decode("utf-8", "replace")
         log(f"    IA no disponible (HTTP {e.code}): {detail}")
-        if e.code in (401, 403, 404, 429):
-            log("    Se desactiva la IA en esta ejecución; se usarán descripciones originales.")
+        if e.code in (400, 401, 403, 404, 429):
+            warn(f"IA desactivada en esta edición (HTTP {e.code}); se usan las descripciones originales.")
             _ai_state["enabled"] = False
     except Exception as e:  # noqa: BLE001 - la IA nunca debe tumbar la edición
         log(f"    Error de IA: {e}")
@@ -532,7 +569,9 @@ def editorial(projects, news):
 def main():
     EDITIONS.mkdir(parents=True, exist_ok=True)
     if not TOKEN:
-        log("Aviso: sin GITHUB_TOKEN. Se usará la API sin autenticar (más lenta) y sin resúmenes con IA.")
+        log("Aviso: sin GITHUB_TOKEN. Se usará la API de GitHub sin autenticar (más lenta).")
+    if not GEMINI_KEY:
+        warn("Falta el secreto GEMINI_API_KEY: la edición saldrá sin resúmenes en español.")
     projects = collect_projects()
     news = collect_news()
     if not projects and not news:
@@ -545,7 +584,7 @@ def main():
         "intro": editorial(projects, news),
         "proyectos": projects,
         "noticias": news,
-        "modelo_ia": CONFIG["ia"]["modelo"] if _ai_state["calls"] and any(
+        "modelo_ia": (_ai_state["model"] or "") if any(
             x["resumido_con_ia"] for x in projects + news) else "",
     }
     out = EDITIONS / f"{TODAY}.json"
