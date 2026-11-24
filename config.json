@@ -31,7 +31,7 @@
   },
   "ia": {
     "activada": true,
-    "modelo": "openai/gpt-4.1-mini",
+    "modelo": "auto",
     "pausa_segundos": 4.5
   },
   "categorias": [
