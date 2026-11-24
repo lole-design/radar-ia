@@ -38,6 +38,7 @@ jobs:
       - name: Recolectar proyectos y noticias
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scripts/collect.py
 
       - name: Guardar la edición en el repositorio
